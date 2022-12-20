@@ -1,6 +1,7 @@
 import argparse
 import requests
 import re
+from bs4 import BeautifulSoup as bs
 
 def get_cucm_name_from_phone(phone):
     url = 'http://{phone}/CGI/Java/Serviceability?adapter=device.statistics.configuration'.format(phone=phone)
@@ -14,15 +15,20 @@ def get_cucm_name_from_phone(phone):
         pass
 
 def parse_cucm(html):
-    cucm = re.search(r'<b>\s*cucm server\d.+?<b>(\S+)', html, re.IGNORECASE)
-    cucm = re.search(r'<b>(\S+)\ +Active', html, re.IGNORECASE)
-    if cucm is None:
-        return None
-    else:
-        if cucm.group(1):
-            if verbose:
-                print(f'Carved CUCM: {cucm.group(1).replace("&#x2D;","-")}')
-            return cucm.group(1).replace('&#x2D;','-')
+    cucm_hosts = []
+    
+    def cucm_hosts(tag):
+        if tag.name != 'b': return False
+        for prev in tag.parent.find_previous_siblings('td'):
+            if re.search(r'cucm server\d', str(prev.string), re.IGNORECASE):
+                return True
+    
+    soup = bs(html, 'html.parser')
+    for el in soup(cucm_hosts):
+        if not el.string: continue
+        cucm_hosts.append(re.split(r'\s+', el.string)[0])
+        
+    return cucm_hosts
 
 def get_config_names(CUCM_host,hostnames=None):
     config_names = []
@@ -117,8 +123,8 @@ def search_for_secrets(CUCM_host,filename):
         print("Could not connect to {CUCM_host}".format(CUCM_host=CUCM_host))
 
 def get_confpage(phoneip):
-    url = f'http://{phoneip}/CGI/Java/Serviceability?'
-            'adapter=device.statistics.configuration'
+    url = f'http://{phoneip}/CGI/Java/Serviceability?' \
+            + 'adapter=device.statistics.configuration'
     try:
         __http_response = requests.get(url, timeout=2)
         if __http_response.status_code == 404:
@@ -131,8 +137,8 @@ def get_confpage(phoneip):
 
 def scrape_phone(phoneip):
     phone_confpage = get_confpage(phoneip)
-    phone_hostname = parse_phone_hostname(phone_confpage, phoneip)
-    cucm_servers = parse_cucm(phone_confpage)
+    return (parse_phone_hostname(phone_confpage, phoneip),
+            parse_cucm(phone_confpage))
 
 if __name__ == '__main__':
     global found_usernames
