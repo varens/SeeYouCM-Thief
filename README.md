@@ -34,40 +34,22 @@ ___________
 ```
 # SeeYouCM Thief
 
-Simple tool to automatically download and parse configuration files from Cisco phone systems searching for SSH credentials. Will also optionally enumerate active directory users from the UDS API. 
+Simple tool to automatically download and parse configuration files from Cisco phone systems searching for SSH credentials. 
 
+This fork adds the ability to specify a file with a list of phone IPs and removes any subnet reverse lookup operations.
 
 ## Blog 
 https://www.trustedsec.com/blog/seeyoucm-thief-exploiting-common-misconfigurations-in-cisco-phone-systems/
 
 ## Usage
 
-Sometimes the CUCM server supplies a list of hostnames. Without specifying a phone IP address the script will attempt to
-download every config in the listing.
+Specify an IP address for a single phone, optionally saving its configuration file to a given directory:
 
-`./thief.py -H <Cisco CUCM Server> [--verbose]`
+`./thief.py <phone-ip> [--verbose|-v] [--save|-s <dir-to-save-conf-files>]`
 
-OR 
+Same as above but performed on a list of phone IPs:
 
-if that doesnt work try using the --phone setting which will parse the web interface for the CUCM address and will do a reverse lookup for other phones in the same subnet.
-
-`./thief.py --phone <Cisco IP Phoner> [--verbose]`
-
-OR
-
-if that doesnt work you can specify a subnet to scan with reverse lookups using 
- 
-`./thief.py --subnet <subnet to scan> [--verbose]`
-
-### User Enumeration
-To optionally enumerate Active Directory users from the UDS api on the CUCM add `--userenum` and it will automatically bruteforce through the API aa-zz to return a list of users.
-
-`./thief.py -H <CUCM server> --userenum`
+`./thief.py <phone-ip-list-file> [--verbose|-v] [--save|-s <dir-to-save-conf-files>]`
 
 ## Setup
 `python3 -m pip install -r requirements.txt`
-
-## Docker
-`docker build . -t name thief:latest`
-
-`docker run thief:latest`

