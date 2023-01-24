@@ -72,6 +72,9 @@ def get_confpage(phoneip):
 
 def scrape_phone(phoneip):
   phone_confpage = get_confpage(phoneip)
+  if not phone_confpage:
+    log(f'IP {phoneip} doesn\'t appear to be a valid Cisco phone.', VERBOSE)
+    return (False, False)
   return (parse_phone_hostname(phone_confpage, phoneip),
       parse_cucm(phone_confpage))
 
